@@ -1,5 +1,5 @@
-# If you come from bash you might have to change your $PATH.
-export PATH=$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH
+# Set various homebrew env vars
+eval "$(brew shellenv)"
 
 if ! [[ -d "$HOME/.oh-my-zsh" ]]; then
     echo "################################################"
@@ -20,7 +20,7 @@ zstyle :omz:plugins:ssh-agent agent-forwarding on
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 # ZSH_THEME="af-magic"
-ZSH_THEME="mh" # set by `omz`
+ZSH_THEME="dracula"
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load
@@ -84,9 +84,12 @@ HIST_STAMPS="mm/dd/yyyy"
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(
+  1password
+  aws
   brew
   colored-man-pages
   colorize
+  docker
   dotenv
   gcloud
   git
@@ -95,53 +98,56 @@ plugins=(
   macos
   pep8
   python
-  rsync
   ssh-agent
   sudo
   zsh-navigation-tools
 )
 
-if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
-    source $ZSH/oh-my-zsh.sh
-fi
-
-if [[ -d "$HOME/google-cloud-sdk/" ]]; then
-    source "${HOME}/google-cloud-sdk/path.zsh.inc"
-    source "${HOME}/google-cloud-sdk/completion.zsh.inc"
-fi
+# If this doesn't exist, we have major problems.
+# Also there's a check near the top.
+source $ZSH/oh-my-zsh.sh
 
 # User configuration
+export EDITOR="nvim"
 
-# export SSH_AUTH_SOCK=~/.ssh/ykpiv-sock
-# export MANPATH="/usr/local/man:$MANPATH"
+# suffix aliases
+alias -s py=nvim
 
-# You may need to manually set your language environment
-# export LANG=en_US.UTF-8
-
-export EDITOR='vim'
-# Compilation flags
-# export ARCHFLAGS="-arch x86_64"
-
-export PYTHONDONTWRITEBYTECODE=1
 
 # Set personal aliases, overriding those provided by oh-my-zsh libs,
 # plugins, and themes. Aliases can be placed here, though oh-my-zsh
 # users are encouraged to define aliases within the ZSH_CUSTOM folder.
 # For a full list of active aliases, run `alias`.
 
+alias cv="rm -rf htmlcov/ && coverage run && coverage html && open htmlcov/index.html"
+alias pipreq="pip install -r requirements.txt"
 alias sb="source bin/activate"
 
 # Fuck virtualenv and the horse it rode in on
 alias virtualenv="echo 'virtualenv is dead, use venv instead'; #"
 
+
+# Automatic venv handling when entering a directory
+function cd(){
+    builtin cd $*
+    if [ -e bin/activate ]; then
+        # echo "[Activated venv]"  # iterm jams this onto PS1 for some reason
+        source bin/activate
+    elif [[ ! $(pwd) =~ "^${VIRTUAL_ENV}" ]] && typeset -f deactivate > /dev/null; then
+        deactivate
+        # echo "[Deactivated venv]"
+    fi
+}
+
+
 # Dynamically build venv aliases
-for py_path in $(ls -d /opt/homebrew/bin/python3* | grep -v '-'); do
+for py_path in $(ls -d ${HOMEBREW_PREFIX}/bin/python3* | grep -v '-'); do
     py_version="${py_path#*python}"
     alias "venv${py_version//./}"="$py_path -m venv"
 done
 
-function venv_cleanup () {
 
+function venv_cleanup () {
     # As this recursively removes bin, lib, etc...
     if [ ! -d .git ]; then
         echo "ERROR: For safety, this must be ran within a valid git repository"
@@ -211,8 +217,21 @@ function project () {
     # Activate current venv if possible
     [[ -f "bin/activate" ]] && sb
 
-    # XXX Could we test python and notify if we need to rebuild
-    # the venv?
+    if [ -L bin/python ]; then
+        # Verify python link exists and notify if not
+        full_python_path=$(readlink -f $(which python))
+        if ! [[ $(command -v "$full_python_path") ]]; then
+            venv_cmd="venv${$(find bin -name 'python*.*')//[^[:digit:]]/}"
+            if [[ $(command -v $venv_cmd) ]]; then
+                echo "!!! The minor version of python no longer exists for this venv !!!"
+                echo "This ususally happens due to an OS or package update"
+                echo "Please run the appropriate venv commands to rebuild: venv_cleanup && $venv_cmd"
+            else
+                echo "!!! The major version of python this venv was built around no longer exists !!!"
+                echo "Please either re-install $(find bin -name 'python*.*') or attempt to use a different version of python!"
+            fi
+        fi
+    fi
 }
 
 function _project() {
@@ -240,15 +259,20 @@ fi
 
 test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
 
-eval "$(brew shellenv)"
-
 # Fuzzy finder
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+export PATH="$HOMEBREW_PREFIX/opt/php@7.4/bin:$PATH"
+export PATH="$HOMEBREW_PREFIX/opt/php@7.4/sbin:$PATH"
+export PATH="$HOMEBREW_PREFIX/opt/mysql-client/bin:$PATH"
 
-# The next line updates PATH for the Google Cloud SDK.
-if [ -f '/Users/clif/Downloads/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/clif/Downloads/google-cloud-sdk/path.zsh.inc'; fi
+# Avoid .pyc files
+export PYTHONDONTWRITEBYTECODE=1
 
-# The next line enables shell command completion for gcloud.
-if [ -f '/Users/clif/Downloads/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/clif/Downloads/google-cloud-sdk/completion.zsh.inc'; fi
+# Google Cloud SDK and gcloud completion
+if [[ -d "$HOME/google-cloud-sdk/" ]]; then
+    source "${HOME}/google-cloud-sdk/path.zsh.inc"
+    source "${HOME}/google-cloud-sdk/completion.zsh.inc"
+fi
 
+# Manage dotfiles with git wrapper
 alias dotfiles='/usr/bin/git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"'
